@@ -307,9 +307,9 @@ def generate_ot_payroll_report(
 ):
     """
     Returns (report_df, stats) where report_df has exactly these columns:
-      Name, Title / Position, Department, Morning OT Hours, Night OT Hours,
-      Cancel Day Offs / Days, Official Holiday / Days, Unpaid Leave,
-      Total Working Days
+      Code, Name, Title / Position, Department, Morning OT Hours,
+      Night OT Hours, Cancel Day Offs / Days, Official Holiday / Days,
+      Unpaid Leave, Total Working Days
     """
     if weekend_days is None:
         weekend_days = DEFAULT_WEEKEND_DAYS
@@ -383,6 +383,7 @@ def generate_ot_payroll_report(
 
         rows.append(
             {
+                "Code": code_key,
                 "Name": name,
                 "Title / Position": title,
                 "Department": department,
@@ -401,6 +402,7 @@ def generate_ot_payroll_report(
     report_df = pd.DataFrame(
         rows,
         columns=[
+            "Code",
             "Name",
             "Title / Position",
             "Department",
@@ -437,7 +439,19 @@ def export_report_to_excel(report_df, title_text="OT & Payroll Summary"):
     ws.title = "OT & Payroll Summary"
 
     columns = list(report_df.columns)
-    col_widths = [22, 20, 18, 16, 14, 18, 18, 12, 16]
+    default_widths = {
+        "Code": 12,
+        "Name": 22,
+        "Title / Position": 20,
+        "Department": 18,
+        "Morning OT Hours": 16,
+        "Night OT Hours": 14,
+        "Cancel Day Offs / Days": 18,
+        "Official Holiday / Days": 18,
+        "Unpaid Leave": 12,
+        "Total Working Days": 16,
+    }
+    col_widths = [default_widths.get(c, 16) for c in columns]
 
     # Title row
     ws.merge_cells(f"A1:{get_column_letter(len(columns))}1")
