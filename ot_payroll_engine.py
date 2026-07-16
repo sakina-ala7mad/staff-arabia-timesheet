@@ -76,9 +76,9 @@ def load_attendance(file_obj):
     df = pd.read_excel(file_obj)
     df.columns = df.columns.str.strip()
 
-    code_col = _find_col(df.columns, "Code")
+    code_col = _find_col(df.columns, "Code", "كود البصمة", "كود", "الكود")
     name_col = _find_col(df.columns, "Name", "Employee Name", "Employees Name")
-    date_col = _find_col(df.columns, "Date")
+    date_col = _find_col(df.columns, "Date", "التاريخ")
     time_col = _find_col(df.columns, "Time")
     io_col = _find_col(df.columns, "I/O", "IO")
 
@@ -126,8 +126,8 @@ def load_employee_master(file_obj):
     df = pd.read_excel(file_obj)
     df.columns = df.columns.str.strip()
 
-    code_col = _find_col(df.columns, "Code")
-    name_col = _find_col(df.columns, "Employees Name", "Name", "Employee Name")
+    code_col = _find_col(df.columns, "Code", "كود البصمة", "كود", "الكود")
+    name_col = _find_col(df.columns, "Employees Name", "Name", "Employee Name", "اسم الموظف الكامل")
     title_col = _find_col(df.columns, "Title", "Position", "Title / Position")
     dept_col = _find_col(df.columns, "Department", "Dept")
 
@@ -165,7 +165,7 @@ def load_vacation_coverage(file_obj):
     df = pd.read_excel(file_obj)
     df.columns = df.columns.str.strip()
 
-    code_col = _find_col(df.columns, "Code")
+    code_col = _find_col(df.columns, "Code", "كود البصمة", "كود", "الكود")
     from_col = _find_col(df.columns, "From", "From Date", "Start Date")
     to_col = _find_col(df.columns, "To", "To Date", "End Date")
 
@@ -214,17 +214,20 @@ def parse_holiday_file(file_obj):
         df = pd.read_excel(file_obj)
     df.columns = df.columns.str.strip()
 
-    date_col = _find_col(df.columns, "Date", "Holiday Date", "Holiday")
+    date_col = _find_col(df.columns, "Date", "Holiday Date", "Holiday", "التاريخ")
     if date_col is None:
         if len(df.columns) == 1:
             date_col = df.columns[0]
         else:
             raise OTPayrollError(
                 "Could not find a date column in the holidays file. "
-                "Name the column 'Date' or upload a file with a single date column."
+                "Name the column 'Date' (or 'التاريخ') or upload a file with a single date column."
             )
 
-    dates = pd.to_datetime(df[date_col], errors="coerce").dt.date.dropna().tolist()
+    # dayfirst=True: official Egyptian holiday sheets commonly mix already-parsed
+    # dates with DD/MM/YYYY text (e.g. "07/01/2026" = 7 Jan, not July 1st).
+    # Real datetime values already parsed by Excel are unaffected by this flag.
+    dates = pd.to_datetime(df[date_col], errors="coerce", dayfirst=True).dt.date.dropna().tolist()
     return set(dates)
 
 
