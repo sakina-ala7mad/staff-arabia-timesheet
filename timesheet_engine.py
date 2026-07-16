@@ -1,18 +1,15 @@
 """
 timesheet_engine.py
 ====================
-SECTION 1 — calculation engine for the Attendance Timesheet Generator.
-All the calculation / Excel-building logic. This file has NO UI code and NO
-Colab code — it just takes in-memory file data and returns a finished
-workbook.
+All the calculation / Excel-building logic for the Staff Arabia Timesheet
+Generator. This file has NO UI code and NO Colab code — it just takes
+in-memory file data and returns a finished workbook. This is what makes it
+reusable: the same functions work behind a Streamlit UI, a Flask UI, a CLI,
+or anything else.
 
 Matching is done by **Code** (employee ID), not by Name, because names are
 spelled slightly differently across the System / Vacation / Employees Data
 files (extra spaces, typos, transliteration differences).
-
-NOTE: This file is intentionally independent from ot_payroll_engine.py
-(Section 2). Do not import from it and do not let Section 2 changes touch
-this file — that's what keeps the two sections from ever breaking each other.
 """
 
 import datetime
@@ -31,31 +28,6 @@ DEFAULT_WEEKEND_DAYS = {4, 5}  # Friday=4, Saturday=5 (Python: Mon=0 ... Sun=6)
 class TimesheetError(Exception):
     """Raised for any user-facing problem (missing columns, bad files, etc.)."""
     pass
-
-
-# ── Flexible column matching (Code / Name can arrive in different formats or
-#    languages depending on which export a client sends) ────────────────────
-_CODE_CANDIDATES = ["Code", "كود البصمة", "كود", "الكود", "Employee Code", "Emp Code", "ID"]
-_NAME_CANDIDATES = ["Employees Name", "Name", "Employee Name", "اسم الموظف الكامل", "الاسم"]
-
-
-def _find_col(columns, candidates):
-    """Case-insensitive lookup of the first matching column name, or None."""
-    lower_map = {str(c).lower().strip(): c for c in columns}
-    for cand in candidates:
-        if cand.lower() in lower_map:
-            return lower_map[cand.lower()]
-    return None
-
-
-def _resolve_code_col(df, file_label):
-    col = _find_col(df.columns, _CODE_CANDIDATES)
-    if col is None:
-        raise TimesheetError(
-            f"Could not find a Code column in the {file_label}. "
-            f"Looked for: {', '.join(_CODE_CANDIDATES)}."
-        )
-    return col
 
 
 # ── Step 1: figure out which uploaded file is which ──────────────────────────
@@ -81,7 +53,7 @@ def classify_files(file_dict):
             cols = [c.lower() for c in df_peek.columns]
             if "i/o" in cols:
                 system_file = fobj
-            elif "title" in cols and any(n.lower() in cols for n in _NAME_CANDIDATES):
+            elif "title" in cols and "employees name" in cols:
                 emp_file = fobj
             elif "vacation" in cols and "from" in cols:
                 vac_file = fobj
@@ -127,29 +99,6 @@ def load_dataframes(system_file, emp_file, vac_file):
     df_emp.columns = df_emp.columns.str.strip()
     df_vac.columns = df_vac.columns.str.strip()
 
-    # Resolve each file's Code column, whatever it's actually called, and
-    # normalize it to a literal "Code" column so the rest of the logic below
-    # doesn't need to care about the source format/language.
-    sys_code_col = _resolve_code_col(df_sys, "Attendance/System file")
-    vac_code_col = _resolve_code_col(df_vac, "Vacation Transaction file")
-    emp_code_col = _resolve_code_col(df_emp, "Employees Data file")
-    if sys_code_col != "Code":
-        df_sys = df_sys.rename(columns={sys_code_col: "Code"})
-    if vac_code_col != "Code":
-        df_vac = df_vac.rename(columns={vac_code_col: "Code"})
-    if emp_code_col != "Code":
-        df_emp = df_emp.rename(columns={emp_code_col: "Code"})
-
-    # Same flexibility for the employee name column
-    emp_name_col = _find_col(df_emp.columns, _NAME_CANDIDATES)
-    if emp_name_col is None:
-        raise TimesheetError(
-            "Could not find an employee name column in the Employees Data file. "
-            f"Looked for: {', '.join(_NAME_CANDIDATES)}."
-        )
-    if emp_name_col != "Employees Name":
-        df_emp = df_emp.rename(columns={emp_name_col: "Employees Name"})
-
     # System file
     df_sys["Date"] = pd.to_datetime(df_sys["Date"], errors="coerce").dt.date
     df_sys["Time"] = pd.to_datetime(df_sys["Time"], errors="coerce").dt.time
@@ -159,7 +108,7 @@ def load_dataframes(system_file, emp_file, vac_file):
     if df_sys.empty:
         raise TimesheetError(
             "The Attendance/System file has no valid rows after cleaning. "
-            "Check that the 'Date' and Code columns are filled in correctly."
+            "Check that the 'Date' and 'Code' columns are filled in correctly."
         )
 
     # Vacation file
@@ -182,7 +131,7 @@ def load_dataframes(system_file, emp_file, vac_file):
     if df_emp_master.empty:
         raise TimesheetError(
             "The Employees Data file has no valid rows after cleaning. "
-            "Check the Code and employee-name columns."
+            "Check the 'Code' and 'Employees Name' columns."
         )
 
     emp_by_code = df_emp_master.set_index("CodeKey").to_dict("index")
