@@ -1,15 +1,18 @@
 """
 timesheet_engine.py
 ====================
-All the calculation / Excel-building logic for the Staff Arabia Timesheet
-Generator. This file has NO UI code and NO Colab code — it just takes
-in-memory file data and returns a finished workbook. This is what makes it
-reusable: the same functions work behind a Streamlit UI, a Flask UI, a CLI,
-or anything else.
+SECTION 1 — calculation engine for the Attendance Timesheet Generator.
+All the calculation / Excel-building logic. This file has NO UI code and NO
+Colab code — it just takes in-memory file data and returns a finished
+workbook.
 
 Matching is done by **Code** (employee ID), not by Name, because names are
 spelled slightly differently across the System / Vacation / Employees Data
 files (extra spaces, typos, transliteration differences).
+
+NOTE: This file is intentionally independent from ot_payroll_engine.py
+(Section 2). Do not import from it and do not let Section 2 changes touch
+this file — that's what keeps the two sections from ever breaking each other.
 """
 
 import datetime
