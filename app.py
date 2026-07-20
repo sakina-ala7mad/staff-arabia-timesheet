@@ -16,6 +16,8 @@ Run locally with:
 """
 
 import io
+import datetime
+import pandas as pd
 import streamlit as st
 
 from timesheet_engine import (
@@ -27,6 +29,17 @@ from overtime_summary_engine import (
     generate_ot_summary,
     OTSummaryError,
     DEFAULT_WEEKEND_DAYS as OT_DEFAULT_WEEKEND_DAYS,
+)
+from daily_checkup_engine import (
+    generate_daily_checkup,
+    get_date_bounds,
+    classify_files as dc_classify_files,
+    load_dataframes as dc_load_dataframes,
+    DailyCheckupError,
+    STATUS_COMPLETE,
+    STATUS_MISSING_OUT,
+    STATUS_MISSING_IN,
+    STATUS_NO_PUNCH,
 )
 
 st.set_page_config(
@@ -93,6 +106,16 @@ st.markdown(
     }
     .badge-blue { background: #E0EAFB; color: #1E3A5F; }
     .badge-teal { background: #CCFBF1; color: #0F766E; }
+    .badge-amber { background: #FEF3C7; color: #92400E; }
+
+    /* Dashboard metric cards */
+    [data-testid="stMetric"] {
+        background: #FFFFFF;
+        border-radius: 12px;
+        padding: 14px 16px;
+        box-shadow: 0 2px 10px rgba(20, 30, 60, 0.06);
+        border: 1px solid rgba(20, 30, 60, 0.05);
+    }
 
     /* Tabs */
     .stTabs [data-baseweb="tab-list"] {
@@ -142,7 +165,11 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-tab_ts, tab_ot = st.tabs(["📋  Timesheet Generator", "🕐  OT & Attendance Summary"])
+tab_ts, tab_ot, tab_dc = st.tabs([
+    "📋  Timesheet Generator",
+    "🕐  OT & Attendance Summary",
+    "✅  Daily Check-Up",
+])
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -350,3 +377,160 @@ with tab_ot:
                     st.error(f"❌ Something unexpected went wrong: {e}")
     else:
         st.info("Waiting for you to upload the 4 files above.")
+
+
+# ═════════════════════════════════════════════════════════════════════════
+# TAB 3 — DAILY CHECK-UP  (new logic, daily_checkup_engine.py)
+# ═════════════════════════════════════════════════════════════════════════
+with tab_dc:
+    st.markdown('<span class="section-badge badge-amber">SECTION 3</span>', unsafe_allow_html=True)
+    st.markdown("#### Daily Punch Check-Up")
+    st.write(
+        "Upload the 3 files below, pick a date, and instantly see who has an "
+        "incomplete or missing punch record for that day — and whether they "
+        "have a leave/mission on file to explain it."
+    )
+
+    with st.expander("What are the 3 files?", expanded=False):
+        st.markdown(
+            """
+- **Attendance / Punches file** — must have a column called **`I/O`**
+- **Vacation / Leave Transaction file** — must have columns **`Vacation`** and **`From`**
+- **Employee master file** — must have columns **`Employees Name`** and **`Title`**
+  (reads the *first* sheet — e.g. the "Data" sheet)
+            """
+        )
+
+    with st.expander("What counts as an issue?", expanded=False):
+        st.markdown(
+            """
+- **Punched In — Missing Out** — has a Punch In that day, no Punch Out.
+- **Punched Out — Missing In** — has a Punch Out that day, no Punch In.
+- **No Punch At All** — no punch record at all for that day.
+
+For every flagged employee, the dashboard also checks the Vacation/Leave file
+for **any** record (any type, any status) covering that date, so you can see
+at a glance whether the gap is explained.
+            """
+        )
+
+    dc_uploaded_files = st.file_uploader(
+        "Upload all 3 Excel files here (you can select all 3 at once)",
+        type=["xlsx", "xls"],
+        accept_multiple_files=True,
+        key="dc_uploader",
+    )
+
+    st.divider()
+
+    if dc_uploaded_files:
+        if len(dc_uploaded_files) != 3:
+            st.warning(f"Please upload exactly 3 files. You've uploaded {len(dc_uploaded_files)}.")
+        else:
+            st.success(f"3 files ready: {', '.join(f.name for f in dc_uploaded_files)}")
+
+            # Peek the attendance file's date range so the date picker is bounded correctly
+            try:
+                file_dict_peek = {f.name: io.BytesIO(f.getvalue()) for f in dc_uploaded_files}
+                att_f, vac_f, emp_f = dc_classify_files(file_dict_peek)
+                df_att_peek, _, _ = dc_load_dataframes(att_f, vac_f, emp_f)
+                min_date, max_date = get_date_bounds(df_att_peek)
+
+                col_a, col_b = st.columns([2, 1])
+                with col_a:
+                    check_date = st.date_input(
+                        "Date to check",
+                        value=max_date,
+                        min_value=min_date,
+                        max_value=max_date,
+                        key="dc_check_date",
+                    )
+                with col_b:
+                    include_complete = st.checkbox(
+                        "Show everyone (incl. complete)", value=False, key="dc_include_complete"
+                    )
+
+                if st.button("🔍 Run Check-Up", type="primary", use_container_width=True, key="dc_run"):
+                    file_dict = {f.name: io.BytesIO(f.getvalue()) for f in dc_uploaded_files}
+                    with st.spinner("Checking attendance records..."):
+                        records, stats, _ = generate_daily_checkup(
+                            file_dict, check_date, include_complete=include_complete
+                        )
+                    st.session_state["dc_results"] = (records, stats)
+
+            except DailyCheckupError as e:
+                st.error(f"⚠️ {e}")
+            except Exception as e:
+                st.error(f"❌ Something unexpected went wrong: {e}")
+
+            # ── Dashboard display ───────────────────────────────────────────
+            if "dc_results" in st.session_state:
+                records, stats = st.session_state["dc_results"]
+
+                st.markdown(f"##### Results for **{stats['check_date'].strftime('%A, %d %B %Y')}**")
+
+                m1, m2, m3, m4 = st.columns(4)
+                m1.metric("✅ Complete", stats["complete"])
+                m2.metric("🟠 Missing Out", stats["missing_out"])
+                m3.metric("🔵 Missing In", stats["missing_in"])
+                m4.metric("🔴 No Punch", stats["no_punch"])
+
+                st.caption(
+                    f"{stats['problem_total']} of {stats['total_employees']} employees "
+                    f"need a look — table below."
+                )
+
+                if records:
+                    df_view = pd.DataFrame(records)
+
+                    status_options = df_view["Status"].unique().tolist()
+                    filter_col1, filter_col2 = st.columns([2, 1])
+                    with filter_col1:
+                        status_filter = st.multiselect(
+                            "Filter by status", status_options, default=status_options, key="dc_status_filter"
+                        )
+                    with filter_col2:
+                        leave_filter = st.selectbox(
+                            "Filter by leave", ["All", "Has Leave", "No Leave"], key="dc_leave_filter"
+                        )
+
+                    df_filtered = df_view[df_view["Status"].isin(status_filter)]
+                    if leave_filter == "Has Leave":
+                        df_filtered = df_filtered[df_filtered["Has Leave?"] == "Yes"]
+                    elif leave_filter == "No Leave":
+                        df_filtered = df_filtered[df_filtered["Has Leave?"] == "No"]
+
+                    def _highlight_status(val):
+                        colors = {
+                            STATUS_COMPLETE: "background-color: #DCFCE7; color: #166534;",
+                            STATUS_MISSING_OUT: "background-color: #FFEDD5; color: #9A3412;",
+                            STATUS_MISSING_IN: "background-color: #DBEAFE; color: #1E40AF;",
+                            STATUS_NO_PUNCH: "background-color: #FEE2E2; color: #991B1B;",
+                        }
+                        return colors.get(val, "")
+
+                    def _highlight_leave(val):
+                        if val == "Yes":
+                            return "background-color: #DCFCE7; color: #166534; font-weight: 600;"
+                        return "background-color: #FEE2E2; color: #991B1B; font-weight: 600;"
+
+                    styled = (
+                        df_filtered.style
+                        .map(_highlight_status, subset=["Status"])
+                        .map(_highlight_leave, subset=["Has Leave?"])
+                    )
+
+                    st.dataframe(styled, use_container_width=True, hide_index=True)
+
+                    csv = df_filtered.to_csv(index=False).encode("utf-8-sig")
+                    st.download_button(
+                        "⬇️ Download this table (.csv)",
+                        data=csv,
+                        file_name=f"DailyCheckup_{stats['check_date'].strftime('%d%b%Y')}.csv",
+                        mime="text/csv",
+                        key="dc_download",
+                    )
+                else:
+                    st.success("🎉 Everyone has a complete punch record for this date!")
+    else:
+        st.info("Waiting for you to upload the 3 files above.")
