@@ -297,13 +297,17 @@ with tab_ot:
   time worked beyond the standard workday length, counted from *(time in + standard hours)*
   to *time out*. That overtime span is then split at the clock: the portion between
   **7:00–19:00** counts as Morning OT, the portion between **19:00–7:00** counts as Night OT.
+  The workday's start time is flexible (9–11am) — this always measures from whenever the
+  employee actually punched in, not a fixed clock time.
 - **Cancel Day Offs / Days** — for weekends or official holidays where the employee worked
   *less than* the standard workday: hours ÷ standard hours, as a fractional day.
 - **Official Holiday / Days** — for weekends or official holidays where the employee worked
   the *full* standard workday or more: counted as 1 full day.
 - **Unpaid Leave** — regular working days with no punch at all **and** no vacation/mission/leave
   record of any kind (any status) covering that date.
-- **Total Working Days** — count of days the employee has a punch-in recorded, in the whole period.
+- **Total Working Days** — every day the employee is credited for: days actually punched in,
+  **plus** every Friday/Saturday and official holiday (counted automatically), **plus** any
+  day covered by a leave/mission record. Only true Unpaid Leave days are excluded.
             """
         )
 

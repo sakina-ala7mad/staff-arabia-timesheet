@@ -376,8 +376,14 @@ def generate_ot_summary(
             t_in, t_out = records.get(date, (None, None))
             hrs = calc_hours(date, t_in, t_out)
             is_off_day = (date.weekday() in weekend_days) or (date in period_holidays)
+            has_leave = is_excused(df_vac, code_key, date)
 
-            if t_in is not None:
+            # Total Working Days now counts every day the employee is credited
+            # for: a day they actually punched, OR a Friday/Saturday/official
+            # holiday (paid regardless of punch), OR any day covered by a
+            # leave/mission record of any kind. Only a regular day with no
+            # punch and no leave record is left uncounted (= unpaid leave).
+            if is_off_day or (t_in is not None) or has_leave:
                 total_working_days += 1
 
             if is_off_day:
@@ -399,7 +405,7 @@ def generate_ot_summary(
                 night_ot += n_ot
 
             if t_in is None and t_out is None:
-                if not is_excused(df_vac, code_key, date):
+                if not has_leave:
                     unpaid_leave_days += 1
 
         fill = _ALT_FILL if emp_idx % 2 == 0 else None
